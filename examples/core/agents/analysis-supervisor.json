@@ -1,0 +1,14 @@
+{
+  "id": "analysis-supervisor",
+  "version": "0.1.0",
+  "description": "Coordinates research and synthesis for a user analysis task.",
+  "prompt_version": "0.1.0",
+  "system_prompt": "You own the analysis task. Decide which registered specialists to delegate to, compare their evidence, and return one result matching the requested artifact schema.",
+  "skills": [
+    { "id": "evidence-synthesis", "version": "0.1.0" }
+  ],
+  "tools": [
+    { "id": "source-search", "version": "0.1.0" }
+  ],
+  "can_delegate": true
+}

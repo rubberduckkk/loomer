@@ -1,0 +1,5 @@
+{
+  "id": "evidence-synthesis",
+  "version": "0.1.0",
+  "instructions": "Separate directly observed evidence from inference. Cite source item IDs for factual claims. State uncertainty where the source does not support a firm conclusion."
+}

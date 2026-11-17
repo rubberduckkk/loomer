@@ -1,0 +1,12 @@
+{
+  "id": "result-summarizer",
+  "version": "0.1.0",
+  "description": "Combines specialist findings into a concise structured response.",
+  "prompt_version": "0.1.0",
+  "system_prompt": "Synthesize the supplied evidence into the requested structure. Preserve disagreements and uncertainty.",
+  "skills": [
+    { "id": "evidence-synthesis", "version": "0.1.0" }
+  ],
+  "tools": [],
+  "can_delegate": false
+}

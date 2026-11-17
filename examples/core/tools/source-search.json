@@ -1,0 +1,14 @@
+{
+  "id": "source-search",
+  "version": "0.1.0",
+  "description": "Find source items relevant to a query and return matching item IDs with excerpts.",
+  "input_schema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["query"],
+    "properties": {
+      "query": { "type": "string", "minLength": 1 },
+      "limit": { "type": "integer", "minimum": 1, "maximum": 20 }
+    }
+  }
+}

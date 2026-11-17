@@ -1,0 +1,68 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://loomer.local/schemas/photo-curation-artifact.schema.json",
+  "title": "Photo Curation Artifact Payload",
+  "description": "Domain payload for a photo-set curation artifact. Wrap this object in the common Loomer artifact envelope.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["brief", "concept", "selection"],
+  "properties": {
+    "brief": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["target_count"],
+      "properties": {
+        "platform": { "type": ["string", "null"] },
+        "target_count": { "type": "integer", "minimum": 1 },
+        "audience": { "type": ["string", "null"] },
+        "mood": { "type": ["string", "null"] },
+        "context": { "type": ["string", "null"] },
+        "must_include": { "type": "array", "items": { "type": "string" }, "uniqueItems": true },
+        "must_exclude": { "type": "array", "items": { "type": "string" }, "uniqueItems": true }
+      }
+    },
+    "concept": { "type": "string", "minLength": 1 },
+    "caption_suggestions": { "type": "array", "items": { "type": "string" } },
+    "selection": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["photo_id", "order", "role", "rationale"],
+        "properties": {
+          "photo_id": { "type": "string", "minLength": 1 },
+          "order": { "type": "integer", "minimum": 1 },
+          "role": { "type": "string", "minLength": 1 },
+          "rationale": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "alternates": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["photo_id", "replaces_photo_id", "rationale"],
+        "properties": {
+          "photo_id": { "type": "string", "minLength": 1 },
+          "replaces_photo_id": { "type": "string", "minLength": 1 },
+          "rationale": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "omissions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["photo_id", "reason"],
+        "properties": {
+          "photo_id": { "type": "string", "minLength": 1 },
+          "reason": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "warnings": { "type": "array", "items": { "type": "string" } }
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "id": "source-inspector",
+  "version": "0.1.0",
+  "description": "Finds and reports evidence from the source collection.",
+  "prompt_version": "0.1.0",
+  "system_prompt": "Inspect the assigned source material and return findings with evidence and uncertainty. Stay within the task you were given.",
+  "skills": [
+    { "id": "evidence-synthesis", "version": "0.1.0" }
+  ],
+  "tools": [
+    { "id": "source-search", "version": "0.1.0" }
+  ],
+  "can_delegate": false
+}

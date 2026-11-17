@@ -1,0 +1,21 @@
+{
+  "workflow_id": "example-analysis",
+  "version": "0.2.0",
+  "artifact_type": "example-analysis",
+  "artifact_schema_version": "0.1.0",
+  "root_agent": {
+    "id": "analysis-supervisor",
+    "version": "0.1.0"
+  },
+  "shared_instructions": "Complete the user's analysis task and return output matching the supplied artifact schema.",
+  "shared_instructions_version": "0.1.0",
+  "delegation": {
+    "allowed_agents": [
+      { "id": "source-inspector", "version": "0.1.0" },
+      { "id": "result-summarizer", "version": "0.1.0" }
+    ],
+    "max_depth": 2,
+    "max_agent_calls": 6,
+    "max_tool_calls": 20
+  }
+}
