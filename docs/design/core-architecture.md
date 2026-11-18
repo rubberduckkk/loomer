@@ -2,13 +2,21 @@
 
 ## Goal
 
-Loomer should support multiple analysis domains without making the data pipeline or evaluation system depend on one domain. A workflow is a reproducible run over source data, a selected agent composition, prompt revisions, and an output artifact schema.
+Looomer should support multiple analysis domains without making the data pipeline or evaluation system depend on one domain. A workflow is a reproducible run over source data, a selected agent composition, prompt revisions, and an output artifact schema.
+
+## Workload and scaling target
+
+The shared core ingests a high volume of records about activity over time. Ingestion is expected to account for most of the platform load. It can continue accepting and normalizing records while every app is idle. The core preserves stable source references so multiple workflows can analyze the same history.
+
+Apps run periodically or on demand. A trigger identifies an app configuration, a task, and the relevant slice of history. The core resolves that input to a snapshot for the run, executes the workflow, and stores its artifact. Trigger frequency and cost per run are separate: an infrequent retrospective may still read a large time window.
+
+Size ingestion capacity against incoming volume and processing lag. Size workflow execution against pending runs, run duration, and model-provider capacity. Each app can change its trigger schedule and scale its own connected systems independently. The shared service implements these paths with a stateless HTTP API, separate ingestion and analysis worker processes, and PostgreSQL for the queues, indexed history, and run records. The local CLI also supports direct runs.
 
 ## Building blocks
 
 1. **Data flow** — accepts and normalizes source data, records stable source identifiers and metadata, and makes the same input available to agent runs. The data layer does not encode domain-specific judgments.
 2. **Agent** — an independently developed unit with its own system prompt, implementation/version, input contract, and output contract. Agents can run alone or as a composition. A task can also provide shared instructions that apply across the composition.
-3. **Artifact** — the durable result of a run. Every artifact uses the common envelope in `schemas/artifact-envelope.schema.json`; its `payload` follows a domain-specific schema such as the photo-curation schema.
+3. **Artifact** — the durable result of a run. Every artifact uses the common envelope in `src/looomer/core/artifact-envelope.schema.json`; its `payload` follows a domain-specific schema such as the photo-curation schema.
 4. **Evaluation** — a separate consumer of run and artifact records. It can inspect source references, agent composition, prompts, schema versions, and outputs, then calculate scenario-specific measures and collect human review. Evaluation must not be embedded in an agent's generation logic.
 5. **Run record** — ties the input snapshot, workflow configuration, agent and prompt versions, artifact, and evaluation together for reproducibility and comparison.
 
@@ -81,7 +89,7 @@ Automatically feeding evaluation feedback into agent code (an RSI loop) is a lat
 
 ## Suggested implementation sequence
 
-1. Build and stabilize generic source snapshot, workflow, agent, run, artifact, and evaluator contracts in `internal/core` — skeleton complete.
+1. Build and stabilize generic source snapshot, workflow, agent, run, artifact, and evaluator contracts in `src/looomer/core/runtime.py` — skeleton complete.
 2. Add the supervisor runtime, separate skill/tool registries, bounded delegation, and execution trace — skeleton complete.
 3. Adapt photo ingestion and curation as the first domain package — initial path complete.
 4. Add specialist definitions, skill/tool loading, and richer multimodal photo inputs.
@@ -89,6 +97,8 @@ Automatically feeding evaluation feedback into agent code (an RSI loop) is a lat
 
 ## Current core implementation
 
-`internal/core` contains generic source snapshot, workflow, agent, skill, tool, run, artifact, and evaluator contracts. The runner starts a registered root agent, loads its declared skills and tools from separate registries, permits policy-bounded delegation, records agent/tool/skill events, validates the root output, and persists the run and artifact. `internal/agent` provides a provider-neutral ReAct loop with an OpenAI-compatible chat-completions adapter. Its model calls route declared tools and specialist delegation through the core runtime. The photo CLI is the first model-backed integration; its current catalog contains metadata rather than image pixels, so the agent is explicitly instructed not to claim visual inspection.
+Looomer is implemented in Python. `src/looomer/core/runtime.py` defines the generic contracts and runs registered agents with bounded delegation, skill/tool registries, execution traces, artifact validation, and persistence. `src/looomer/core/harness.py` adapts these capabilities to the Strands Agents SDK, which owns each agent's model/tool loop. Provider configuration explicitly selects OpenAI, Anthropic, Google, Ollama, or Bedrock.
 
-The built-in validator supports the keywords used by the current contract schemas: types (including type unions), required properties, properties, additional properties, array items and bounds, uniqueness, string bounds and date-time format, numeric bounds, and enums. Unsupported schema keywords fail validation explicitly.
+The core owns permission checks and shared workflow budgets. Strands tools bridge back to those checks; specialist delegation starts another Strands agent with its own context. Tools execute sequentially. A hook limits each agent to 12 model calls, and runtime failures remain failed runs. The SDK is isolated from domain payloads and the independent evaluator.
+
+JSON Schema validation uses the Python `jsonschema` implementation with Draft 2020-12 and format checks. The JSON repository preserves the original collection layout. The CLI's photo input remains metadata only; visual analysis and human review remain planned work.

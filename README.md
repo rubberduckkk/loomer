@@ -1,52 +1,82 @@
-# Loomer
+# Looomer
 
-Loomer is a data-to-artifact workbench: reusable data ingestion and provenance, pluggable analysis agents, typed artifacts, and an independent evaluation loop.
+Product domain: `looomer.com`.
 
-The first end-to-end workflow is **photo-set curation**. It takes a collection of photos and produces a reviewable selection with a narrative sequence and per-photo rationale.
+Looomer is a Python data-to-artifact workbench: reusable ingestion and provenance, pluggable analysis agents, typed JSON artifacts, and independent evaluation. Photo-set curation is the first domain.
 
-## Design
+## Shared service
 
-- [Core architecture](docs/design/core-architecture.md)
-- [Photo-set curation workflow](docs/workflows/photo-set-curation.md)
-- [Generic workflow example](examples/core/workflow.json)
-- [Supervisor definition](examples/core/agents/analysis-supervisor.json)
-- [Specialist definition](examples/core/agents/source-inspector.json)
-- [Synthesis specialist definition](examples/core/agents/result-summarizer.json)
-- [Skill definition](examples/core/skills/evidence-synthesis.json)
-- [Tool definition](examples/core/tools/source-search.json)
-- [Common artifact envelope](schemas/artifact-envelope.schema.json)
-- [Photo curation artifact](schemas/photo-curation-artifact.schema.json)
-- [Example workflow definition](examples/photo-set-curation/workflow.json)
+Install `.[service]` and deploy `looomer-core serve`, `looomer-core worker ingest`, and `looomer-core worker analysis` against the same PostgreSQL database. Sources submit event batches independently of app runs. Apps are versioned JSON manifests and can trigger analysis over a time window through HTTP. Only analysis workers need model access. For setup, API examples, concurrency and replay behavior, see the [deployment reference](docs/deployment.md).
 
-The generic workflow example uses the supervisor-led delegation model described in the architecture document.
+## Install
 
-## Core first
-
-The reusable core lives in `internal/core`. It defines domain-neutral source snapshots, a root-agent workflow, versioned agent/skill/tool contracts, bounded agent delegation, an execution trace, evaluator interfaces, a generic artifact envelope whose payload is JSON, and JSON Schema validation for the contract keywords used by this repo. `internal/storage` provides a JSON file repository implementing the core persistence boundary. Domain packages adapt their own inputs, metadata, payload schemas, and evaluation rules to these contracts.
-
-The file repository stores JSON records in `snapshots/`, `workflows/`, `runs/`, `artifacts/`, and `evaluations/` under the root passed to `storage.NewFileRepository`. The validator supports the schema keywords currently used in `schemas/`; it is not a complete implementation of every JSON Schema draft keyword.
-
-The `photos` CLI adapts its photo catalog and curation payload to the generic snapshot, runner, artifact, repository, and evaluator contracts. `internal/agent` supplies a ReAct loop and OpenAI-compatible chat-completions adapter; model tool calls are routed through the core runtime and its permission checks.
-
-## Photo reference path
-
-The current local CLI creates a photo catalog, asks a model-backed supervisor to produce a curation artifact, and evaluates deterministic constraints independently from curation. The supervisor can delegate metadata review to a specialist and receives a versioned curation skill. The initial photo catalog contains metadata only, so it does not enable visual inspection of the images.
+Requires Python 3.11+ with venv support.
 
 ```sh
-go run ./cmd/loomer photos scan --source ./my-photo-set --output ./work/catalog.json
-go run ./cmd/loomer photos curate \
-  --catalog ./work/catalog.json \
-  --store ./work/loomer-store \
-  --output ./work/artifact.json \
-  --run-output ./work/run.json
-go run ./cmd/loomer photos evaluate \
-  --store ./work/loomer-store \
-  --artifact artifact_ID_FROM_CURATE \
+python3 -m venv .venv
+. .venv/bin/activate
+pip install -e '.[dev]'
+```
+
+The checked-in `requirements-lock.txt` records the tested Python 3.14 environment, including optional providers and test dependencies. For that environment, install it before installing Looomer with `pip install -r requirements-lock.txt` and `pip install -e . --no-deps`.
+
+## Model providers
+
+Strands owns the agent loop. Provider configuration is explicit; there is no implicit Bedrock fallback. Choose a model that supports tool calling.
+
+```sh
+export LOOOMER_PROVIDER=openai
+export LOOOMER_MODEL=YOUR_MODEL_ID
+export OPENAI_API_KEY=YOUR_API_KEY
+# Optional: OPENAI_BASE_URL for an OpenAI-compatible endpoint
+```
+
+Other supported configurations:
+
+- `LOOOMER_PROVIDER=anthropic`: install `.[anthropic]`, set `ANTHROPIC_API_KEY`.
+- `LOOOMER_PROVIDER=google`: install `.[google]`, set `GOOGLE_API_KEY`.
+- `LOOOMER_PROVIDER=ollama`: install `.[ollama]`, optionally set `OLLAMA_HOST` (defaults to `http://localhost:11434`).
+- `LOOOMER_PROVIDER=bedrock`: use the AWS credential chain and optionally `AWS_REGION`.
+
+Every provider requires `LOOOMER_MODEL`. Non-AWS providers do not require AWS credentials. Model capabilities, including images and tool calling, vary by model and endpoint.
+
+## Photo workflow
+
+```sh
+looomer photos scan --source ./my-photo-set --output ./work/catalog.json
+looomer photos curate --catalog ./work/catalog.json --store ./work/store \
+  --output ./work/artifact.json --run-output ./work/run.json
+looomer photos evaluate --store ./work/store --artifact ARTIFACT_ID \
   --output ./work/evaluation.json
 ```
 
-The curate command prints the artifact ID used by evaluate. Configure `OPENAI_API_KEY` and `LOOMER_MODEL` before running it. Set `OPENAI_BASE_URL` when using an OpenAI-compatible endpoint other than the default. The generated payload must use photo IDs from the catalog; `target_count` must match the number selected and `order` values must be contiguous.
+`python -m looomer` is equivalent to `looomer`. The default workflow and schemas are packaged, so commands work outside the repository. `--workflow PATH` loads a custom workflow with its schema path resolved relative to the workflow file.
 
-The scanner recognizes common photo extensions, creates stable IDs from each relative path and file content, and stores the content hash separately. It records paths relative to the supplied folder; keep that folder available to open the original images. Unsupported image codecs may have no decoded width/height in the catalog.
+The catalog contains **metadata only**, not image pixels. Selection must not imply visual inspection. The scanner hashes files, preserves relative source paths, and records dimensions when Pillow supports the codec. Keep the original folder available. EXIF extraction, multimodal analysis, explicit user brief input, and human review/edit history remain future work. Current constraint evaluation checks the brief in the generated payload.
 
-The core records the model-backed agent, prompt version, tool/delegation events, and artifact provenance. The evaluator loads the persisted snapshot, workflow, run, and artifact, then saves its independent result in the repository.
+## Repository layout
+
+```text
+src/looomer/
+  core/                Shared runtime, service, workers, manifest loader, and storage
+  apps/
+    activity_recap/    Activity recap manifest
+    photo_curation/    Photo manifest, schema, local CLI, ingestion, and evaluation
+examples/core/         Generic workflow and agent definition examples
+```
+
+## Architecture
+For the deployment topology, storage mounts, and staging invocation, see the [deployment reference](docs/deployment.md).
+
+- `src/looomer/core/runtime.py`: generic agent/repository protocols, registries, snapshots, workflow execution, permissions, delegation budgets, trace, and artifact validation.
+- `src/looomer/core/harness.py`: Strands integration and provider factory. Each supervisor/specialist invocation gets its own Strands agent, tools, skills, and bounded model loop.
+- `src/looomer/core/storage.py`: atomic JSON records in `snapshots/`, `workflows/`, `runs/`, `artifacts/`, and `evaluations/`.
+- `src/looomer/apps/photo_curation/photos.py`: photo ingestion, agent definitions, and independent evaluation.
+
+The Python implementation replaces the original Go implementation. Existing JSON record shapes and collection names remain readable; no repository conversion is required. Snapshot hashing retains the original field-based algorithm. Newly scanned metadata may differ because image codec support and timestamp precision differ. Evaluation uses version `0.2.0`, adding independent payload schema validation.
+
+Looomer enforces tool/delegation permissions outside Strands. Tools execute sequentially to preserve shared workflow budgets and trace order. Model calls are limited to 12 per agent invocation. Tool failures invalidate the run even if the SDK feeds the error back to the model. Final JSON is validated with `jsonschema`; there is no custom model loop or custom schema validator.
+
+Run `pytest` for offline tests using a scripted model through the real Strands loop. These exercise delegation, tool execution, failure persistence, evaluation, and provider construction; they do not verify live provider APIs. Optional-provider tests require `pip install -e '.[dev,anthropic,google,ollama]'`.
+
+See [core architecture](docs/design/core-architecture.md), [photo workflow](src/looomer/apps/photo_curation/README.md), and [generic workflow example](examples/core/workflow.json).

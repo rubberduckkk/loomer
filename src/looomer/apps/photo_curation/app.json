@@ -1,0 +1,218 @@
+{
+  "app": "photo-set-curation",
+  "version": "0.2.0",
+  "source": "photos",
+  "max_items": 200,
+  "workflow": {
+    "workflow_id": "photo-set-curation",
+    "version": "0.2.0",
+    "artifact_type": "photo-curation",
+    "artifact_schema_version": "0.1.0",
+    "root_agent": {
+      "id": "photo-supervisor",
+      "version": "0.1.0"
+    },
+    "shared_instructions": "Create a coherent, varied ordered selection. Refer to photos only by photo_id. Separate catalog evidence from inference and honor the user's constraints.",
+    "shared_instructions_version": "0.2.0",
+    "delegation": {
+      "allowed_agents": [
+        {
+          "id": "photo-metadata-reviewer",
+          "version": "0.1.0"
+        }
+      ],
+      "max_depth": 1,
+      "max_agent_calls": 4,
+      "max_tool_calls": 0
+    }
+  },
+  "schema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://looomer.local/schemas/photo-curation-artifact.schema.json",
+    "title": "Photo Curation Artifact Payload",
+    "description": "Domain payload for a photo-set curation artifact. Wrap this object in the common Looomer artifact envelope.",
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+      "brief",
+      "concept",
+      "selection"
+    ],
+    "properties": {
+      "brief": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "target_count"
+        ],
+        "properties": {
+          "platform": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "target_count": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "audience": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "mood": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "context": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "must_include": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "uniqueItems": true
+          },
+          "must_exclude": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "uniqueItems": true
+          }
+        }
+      },
+      "concept": {
+        "type": "string",
+        "minLength": 1
+      },
+      "caption_suggestions": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "selection": {
+        "type": "array",
+        "minItems": 1,
+        "items": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "photo_id",
+            "order",
+            "role",
+            "rationale"
+          ],
+          "properties": {
+            "photo_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "order": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "role": {
+              "type": "string",
+              "minLength": 1
+            },
+            "rationale": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        }
+      },
+      "alternates": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "photo_id",
+            "replaces_photo_id",
+            "rationale"
+          ],
+          "properties": {
+            "photo_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "replaces_photo_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "rationale": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        }
+      },
+      "omissions": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "photo_id",
+            "reason"
+          ],
+          "properties": {
+            "photo_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "reason": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        }
+      },
+      "warnings": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      }
+    }
+  },
+  "agents": [
+    {
+      "id": "photo-supervisor",
+      "version": "0.1.0",
+      "prompt_version": "photo-curation/0.1.0",
+      "system_prompt": "You are the supervisor for photo-set curation. Decide whether the metadata reviewer specialist would help with this task and delegate when useful. Use only photo IDs present in the input. Make a coherent, varied ordered selection and explain each selection using only evidence available in the catalog. Do not claim to have visually inspected photos when the input contains metadata only.",
+      "can_delegate": true,
+      "skills": [
+        {
+          "id": "photo-curation-guidance",
+          "version": "0.1.0"
+        }
+      ]
+    },
+    {
+      "id": "photo-metadata-reviewer",
+      "version": "0.1.0",
+      "prompt_version": "photo-metadata-review/0.1.0",
+      "system_prompt": "Review the supplied photo catalog and assigned task. Return a concise JSON analysis listing useful groupings, dimensions, timestamps, and any limits of the available metadata. Do not invent visual content or select IDs absent from the catalog."
+    }
+  ],
+  "skills": [
+    {
+      "id": "photo-curation-guidance",
+      "version": "0.1.0",
+      "instructions": "Build a sequence with variety in orientation, dimensions, and capture time where the catalog supports it. Separate observable metadata from visual or narrative inference. Explain uncertainty and avoid implying that metadata reveals image content."
+    }
+  ]
+}
