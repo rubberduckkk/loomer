@@ -48,6 +48,10 @@ def test_independent_workers_and_versioned_app():
     assert post("/v1/events", initial, **{"Idempotency-Key": unique}) == first
     assert work_once(db, "ingest")
     assert status(first)["status"] == "completed"
+    assert client.get("/v1/jobs/" + first + "/input").json()["source"] == unique
+    assert first in [row["id"] for row in client.get("/v1/jobs").json()]
+    assert unique in [row["app"] for row in client.get("/v1/apps").json()]
+    assert client.get("/v1/events/count", params={"source": unique}).json() == {"count": 1}
     conflict = post("/v1/events", batch([("0", "photo:0"), ("a", "changed")]))
     work_once(db, "ingest")
     assert status(conflict)["status"] == "failed"

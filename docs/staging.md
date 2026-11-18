@@ -89,3 +89,13 @@ Look for completed status and the selected photo ID in result.artifact.payload. 
 ## Recovery
 
 For an application rollback revert the faulty commit on main and approve the resulting run. Deploys reuse the PostgreSQL volume. Take a database backup before schema changes and plan database recovery separately. Register changed manifest definitions with a new version.
+
+## Core admin
+
+From the machine running your browser, open an SSH tunnel with your ordinary VM login:
+
+```sh
+ssh -N -L 8081:127.0.0.1:8081 ADMIN@staging.looomer.com
+```
+
+Open http://localhost:8081 and keep the tunnel open. Access to the loopback port grants operator access, including submitting model-backed runs. The admin service supplies the API credential on the server. Select a submission time to inspect batch events, errors, or an analysis artifact and its input snapshot and trace. Refresh activity to update job status. Run an app previews the committed event count for its source and UTC window. Workers select inputs when execution starts.

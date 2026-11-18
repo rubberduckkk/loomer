@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Looomer · Core admin</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#f6f6f1;color:#22392e;font:16px/1.5 system-ui,sans-serif}header,main{max-width:1120px;margin:auto;padding:20px}header{border-bottom:1px solid #bbc6bc;font-weight:700}h1{font:42px Georgia,serif;margin:8px 0 16px}h2{font:26px Georgia,serif}section{background:white;border:1px solid #ccd4cb;padding:20px;margin:16px 0;border-radius:8px}button,input,select,textarea{font:inherit;padding:7px;border:1px solid #a5b3a5;border-radius:4px}button{background:#234c39;color:white;cursor:pointer}button:disabled{opacity:.5}label{display:grid;gap:4px;margin:12px 0}table{width:100%;border-collapse:collapse;text-align:left}td,th{padding:8px;border-bottom:1px solid #ddd}td button{background:none;color:#23573d;border:0;text-decoration:underline}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#f5f6f2;padding:12px}summary{cursor:pointer;font-weight:600}.scroll{overflow:auto}#error{color:#992e1c}a{color:inherit}
+</style>
+<header>Looomer / Core admin</header>
+<main><h1>Activity</h1><p id="error" role="alert"></p>
+<section><details id="composer"><summary>Run an app</summary>
+<form id="form"><label>Registered app<select id="apps" required></select></label>
+<label>Start time (UTC, inclusive)<input type="datetime-local" step="1" id="start"></label>
+<label>End time (UTC, exclusive)<input type="datetime-local" step="1" id="end"></label>
+<p id="matches"></p><label>Task<textarea required id="task"></textarea></label>
+<button id="launch" disabled>Submit run</button></form></details></section>
+<section><h2>Recent jobs</h2><button id="refresh">Refresh activity</button>
+<div class="scroll"><table><thead><tr><th>Submitted (UTC)</th><th>Kind</th><th>Source or app</th><th>Status</th></tr></thead><tbody id="jobs"></tbody></table></div></section>
+<section id="detail" hidden><h2 id="title"></h2><div id="records"></div></section></main>
+<script>
+const el = id => document.getElementById(id);
+let registered = [], selected = '', countVersion = 0, requestKey = crypto.randomUUID();
+async function api(path, options = {}) {
+  const response = await fetch('/v1/' + path, {...options, headers: {'X-Looomer-Admin':'1', ...options.headers}});
+  const value = await response.json();
+  if (!response.ok) throw Error(value.error || response.statusText);
+  return value;
+}
+function handle(fn) {
+  return async event => {
+    el('error').textContent = '';
+    try { await fn(event); } catch (err) { el('error').textContent = err.message; }
+  };
+}
+function windowFields() {
+  const bounds = {};
+  for (const id of ['start','end']) if (el(id).value) bounds[id] = el(id).value + 'Z';
+  return bounds;
+}
+async function previewCount() {
+  const version = ++countVersion, app = registered[el('apps').value];
+  el('launch').disabled = true;
+  el('matches').textContent = '';
+  if (!app) return;
+  const query = new URLSearchParams({source:app.source,...windowFields()});
+  const {count} = await api('events/count?' + query);
+  if (version !== countVersion) return;
+  el('matches').textContent = count + ' matching events from ' + app.source + ' · limit ' + app.max_items;
+  el('launch').disabled = count < 1 || count > app.max_items;
+}
+function block(label,value,open=false) {
+  const panel=document.createElement('details'), summary=document.createElement('summary'), pre=document.createElement('pre');
+  summary.textContent=label; pre.textContent=JSON.stringify(value,null,2); panel.open=open;
+  panel.append(summary,pre); return panel;
+}
+async function inspect(id) {
+  selected=id;
+  const base='jobs/'+encodeURIComponent(id);
+  const [job,input]=await Promise.all([api(base),api(base+'/input')]);
+  const blocks=[block(job.kind==='ingest'?'Batch events':'Run request',input,job.kind==='ingest')];
+  if (job.error) blocks.unshift(block('Error',job.error,true));
+  if (job.result) blocks.unshift(block('Output',job.result.artifact || job.result,true));
+  if (job.result?.artifact) {
+    const path='apps/'+encodeURIComponent(input.app)+'/records/';
+    const [run,snapshot]=await Promise.all([api(path+'runs/'+encodeURIComponent(job.result.run_id)),
+      api(path+'snapshots/'+encodeURIComponent(job.result.artifact.provenance.input_snapshot_id))]);
+    blocks.push(block('Input snapshot',snapshot),block('Run trace',run));
+  }
+  if(selected!==id)return;
+  el('title').textContent=job.kind+' · '+job.status;
+  el('records').replaceChildren(document.createTextNode(id),...blocks); el('detail').hidden=false;
+}
+async function refresh() {
+  const items=await api('jobs');
+  el('jobs').replaceChildren();
+  for(const job of items) {
+    const row=el('jobs').insertRow(), link=document.createElement('button');
+    link.textContent=new Date(job.submitted_at).toISOString().replace('T',' ').slice(0,19);
+    link.onclick=handle(async()=>{await inspect(job.id);el('detail').scrollIntoView();});
+    row.insertCell().append(link);
+    for(const value of [job.kind,job.name,job.status])row.insertCell().textContent=value;
+  }
+  if (!items.length) el('jobs').insertRow().insertCell().textContent='No jobs yet';
+  if(selected)await inspect(selected);
+}
+el('refresh').onclick=handle(refresh);
+el('form').oninput=()=>{requestKey=crypto.randomUUID();};
+for(const id of ['apps','start','end'])el(id).onchange=handle(previewCount);
+el('form').onsubmit=handle(async event=>{
+  event.preventDefault();
+  const app=registered[el('apps').value], key=requestKey;
+  el('launch').disabled=true;
+  try {
+    const job=await api('runs',{method:'POST',headers:{'Content-Type':'application/json','Idempotency-Key':key},
+      body:JSON.stringify({app:app.app,version:app.version,task:el('task').value,...windowFields()})});
+    requestKey=crypto.randomUUID(); selected=job.job_id; el('composer').open=false;
+    await refresh(); el('detail').scrollIntoView();
+  } finally {await previewCount();}
+});
+handle(async()=>{
+  registered=await api('apps');
+  registered.forEach((app,index)=>el('apps').add(new Option(app.app+' · '+app.version,index)));
+  await Promise.all([refresh(),previewCount()]);
+})();
+</script></html>

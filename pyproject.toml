@@ -27,7 +27,7 @@ looomer-core = "looomer.core.service:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-"looomer.core" = ["*.json"]
+"looomer.core" = ["*.json", "*.html"]
 "looomer.apps.photo_curation" = ["*.json"]
 "looomer.apps.activity_recap" = ["*.json"]
 

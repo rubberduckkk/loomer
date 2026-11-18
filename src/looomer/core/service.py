@@ -118,7 +118,43 @@ def create_api(db, token):
         except KeyError:
             return JSONResponse({"error": "unknown record"}, 404)
 
-    return Starlette(routes=[Route("/v1/events", submit, methods=["POST"]),
+    def inspect(request):
+        if not authorized(request):
+            return JSONResponse({"error": "unauthorized"}, 401)
+        with db.connect() as conn:
+            if request.url.path == "/v1/jobs":
+                rows = conn.execute("""
+                    SELECT id, kind, status, submitted_at, coalesce(payload->>'source', payload->>'app')
+                    FROM looomer_jobs ORDER BY submitted_at DESC, id DESC LIMIT 100
+                """).fetchall()
+                return JSONResponse([dict(id=i, kind=k, status=s, submitted_at=t.isoformat(), name=n)
+                                     for i, k, s, t, n in rows])
+            if request.url.path == "/v1/apps":
+                rows = conn.execute("SELECT manifest FROM looomer_apps ORDER BY app,version").fetchall()
+                return JSONResponse([{k: m[k] for k in ("app", "version", "source", "max_items")}
+                                     for (m,) in rows])
+            if request.url.path == "/v1/events/count":
+                query = request.query_params
+                try:
+                    source = nonempty(query.get("source"), "source")
+                    start, end = [timestamp(query[k]) if query.get(k) else None for k in ("start", "end")]
+                    if start and end and datetime.fromisoformat(start) >= datetime.fromisoformat(end):
+                        raise ValueError("start must precede end")
+                except ValueError as error:
+                    return JSONResponse({"error": str(error)}, 400)
+                count = conn.execute("""
+                    SELECT count(*) FROM looomer_history WHERE source=%s
+                    AND (%s::timestamptz IS NULL OR occurred_at >= %s)
+                    AND (%s::timestamptz IS NULL OR occurred_at < %s)
+                """, (source, start, start, end, end)).fetchone()[0]
+                return JSONResponse({"count": count})
+            row = conn.execute("SELECT payload FROM looomer_jobs WHERE id=%s",
+                               (request.path_params["job_id"],)).fetchone()
+            return JSONResponse(row[0]) if row else JSONResponse({"error": "unknown job"}, 404)
+
+    return Starlette(routes=[Route("/v1/jobs", inspect), Route("/v1/apps", inspect),
+                             Route("/v1/events/count", inspect), Route("/v1/jobs/{job_id}/input", inspect),
+                             Route("/v1/events", submit, methods=["POST"]),
                              Route("/v1/runs", submit, methods=["POST"]),
                              Route("/v1/jobs/{job_id}", status),
                              Route("/v1/apps/{app}/records/{collection}/{identifier}", record)])

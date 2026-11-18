@@ -25,6 +25,13 @@ services:
       LOOOMER_API_TOKEN: ${LOOOMER_API_TOKEN:?set token}
     command: ["serve", "--host", "0.0.0.0"]
     ports: ["127.0.0.1:8080:8080"]
+  admin:
+    <<: *app
+    entrypoint: ["python", "-m", "looomer.core.admin"]
+    environment:
+      LOOOMER_API_URL: http://api:8080
+      LOOOMER_API_TOKEN: ${LOOOMER_API_TOKEN:?set token}
+    ports: ["127.0.0.1:8081:8081"]
   ingest:
     <<: *app
     command: ["worker", "ingest"]
