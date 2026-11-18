@@ -57,3 +57,22 @@ Replicate each process role independently. Each worker claims one job at a time 
 Queue removal and result publication commit together. A database disconnect or terminated worker releases its claim and another worker can replay the job. An analysis replay may select newer committed history within its requested window and may repeat model and external tool calls. Use replay-safe connectors; each tool request includes X-Looomer-Job. Keep ingestion and analysis requests independently idempotent by setting an Idempotency-Key. An ordinary app error records a failed job; submit a new key for an intentional rerun. Back up PostgreSQL for queue, history, configuration, and artifact recovery.
 
 For offline service integration tests, point LOOOMER_TEST_DATABASE_URL at a disposable database with no other workers or queued work and run pytest. The tests exercise the HTTP API and real competing database connections.
+
+## Select events by tag
+
+Supply optional event-level tags beside occurred_at and item, for example
+`"tags": ["album:candidate", "trip:kyoto"]`. Tags are case-sensitive strings.
+Ingestion trims surrounding whitespace, removes duplicates, and treats order as
+irrelevant. Labels belong to the immutable source event. Reusing its ID with a
+different tag set conflicts. Existing events have an empty set.
+
+An app manifest can declare `"required_tags": ["album:candidate"]`. Register a
+new app version to change its defaults. A run can add `"all_tags": ["trip:kyoto"]`.
+The worker requires every tag from both lists, along with the app source and the
+requested event-time window. Omitted lists add no restrictions.
+
+In Core admin, select an app and enter additional required tags one per line.
+The count previews the selection at that moment. To request it via HTTP, use
+`GET /v1/events/count?app=photo-set-curation&version=0.2.0&all_tags=trip%3Akyoto`.
+Repeat all_tags for additional labels. A completed job records the combined set
+in result.all_tags and its input snapshot records the selected items.

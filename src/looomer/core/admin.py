@@ -23,7 +23,7 @@ async def proxy(request):
         headers["Content-Type"] = "application/json"
         headers["Idempotency-Key"] = request.headers["idempotency-key"]
     async with httpx.AsyncClient(base_url=os.environ["LOOOMER_API_URL"], trust_env=False) as client:
-        result = await client.request(request.method, request.url.path, params=request.query_params,
+        result = await client.request(request.method, request.url.path, params=request.query_params.multi_items(),
                                       content=await request.body(), headers=headers)
     return Response(result.content, status_code=result.status_code, media_type="application/json",
                     headers={"Cache-Control": "no-store"})

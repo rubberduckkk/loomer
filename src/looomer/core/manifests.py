@@ -8,7 +8,14 @@ from jsonschema import Draft202012Validator
 from .runtime import Registry, key
 
 
+def tag_list(value):
+    if not isinstance(value, list) or any(not isinstance(t, str) or not t.strip() for t in value):
+        raise ValueError("tags must be an array of nonempty strings")
+    return sorted({t.strip() for t in value})
+
+
 def check_manifest(m):
+    tag_list(m.get("required_tags", []))
     for name in ("app", "version", "source"):
         if not isinstance(m.get(name), str) or not m[name].strip():
             raise ValueError(f"{name} is required")

@@ -17,6 +17,8 @@ CREATE TABLE IF NOT EXISTS looomer_history (
     source text NOT NULL, item_id text NOT NULL, occurred_at timestamptz NOT NULL,
     item jsonb NOT NULL, PRIMARY KEY (source, item_id)
 );
+ALTER TABLE looomer_history ADD COLUMN IF NOT EXISTS tags text[] NOT NULL DEFAULT '{}';
+CREATE INDEX IF NOT EXISTS looomer_history_tags ON looomer_history USING gin(tags);
 CREATE INDEX IF NOT EXISTS looomer_history_window ON looomer_history(source, occurred_at, item_id);
 CREATE TABLE IF NOT EXISTS looomer_jobs (
     id text PRIMARY KEY, kind text NOT NULL, request_key text, payload jsonb NOT NULL,
@@ -119,16 +121,16 @@ def ingest(conn, payload):
     # duplicate IDs within the batch. The worker wraps both statements atomically.
     args = (payload["source"], Jsonb(payload["events"]))
     conn.execute("""
-        INSERT INTO looomer_history(source,item_id,occurred_at,item)
-        SELECT %s, item->>'id', occurred_at, item
-        FROM jsonb_to_recordset(%s) AS e(occurred_at timestamptz,item jsonb)
+        INSERT INTO looomer_history(source,item_id,occurred_at,item,tags)
+        SELECT %s, item->>'id', occurred_at, item, coalesce(tags, '{}')
+        FROM jsonb_to_recordset(%s) AS e(occurred_at timestamptz,item jsonb,tags text[])
         ORDER BY item->>'id' ON CONFLICT DO NOTHING
         """, args)
     conflict = conn.execute("""
         SELECT h.item_id FROM looomer_history h
-        JOIN jsonb_to_recordset(%s) AS e(occurred_at timestamptz,item jsonb)
+        JOIN jsonb_to_recordset(%s) AS e(occurred_at timestamptz,item jsonb,tags text[])
           ON h.item_id=e.item->>'id'
-        WHERE h.source=%s AND (h.item <> e.item OR h.occurred_at <> e.occurred_at)
+        WHERE h.source=%s AND (h.item <> e.item OR h.occurred_at <> e.occurred_at OR h.tags <> coalesce(e.tags, '{}'))
         LIMIT 1
         """, (args[1], args[0])).fetchone()
     if conflict:
@@ -136,21 +138,29 @@ def ingest(conn, payload):
     return {"received": len(payload["events"])}
 
 
-def select_items(conn, source, payload, limit):
+def selection_filter(source, payload, tags):
     conditions = ["source=%s"]
     args = [source]
     for field, clause in (("start", "occurred_at >= %s"), ("end", "occurred_at < %s")):
         if field in payload:
             conditions.append(clause)
             args.append(payload[field])
+    if tags:
+        conditions.append("tags @> %s::text[]")
+        args.append(tags)
+    return " AND ".join(conditions), args
+
+
+def select_items(conn, source, payload, limit, tags=()):
+    where, args = selection_filter(source, payload, tags)
     args.append(limit + 1)
-    rows = conn.execute("SELECT item,occurred_at FROM looomer_history WHERE " + " AND ".join(conditions)
+    rows = conn.execute("SELECT item,occurred_at,tags FROM looomer_history WHERE " + where
                         + " ORDER BY occurred_at,item_id LIMIT %s", args).fetchall()
     if len(rows) > limit:
         raise ValueError("selection exceeds app max_items; narrow the time window")
     items = []
-    for item, occurred_at in rows:
+    for item, occurred_at, event_tags in rows:
         # Keep the event envelope distinct from app-supplied metadata.
         items.append({**item, "metadata": {"source": source, "occurred_at": occurred_at.astimezone(timezone.utc).isoformat(),
-                                          "original": item.get("metadata", {})}})
+                                          **({"tags": event_tags} if event_tags else {}), "original": item.get("metadata", {})}})
     return items

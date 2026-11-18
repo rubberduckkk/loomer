@@ -22,6 +22,7 @@ def test_independent_workers_and_versioned_app():
     unique = uuid4().hex
     manifest["app"] = manifest["workflow"]["workflow_id"] = unique
     manifest["source"] = unique
+    manifest["required_tags"] = ["candidate"]
     manifests.check_manifest(manifest)
     db.register(manifest)
     db.register(manifest)
@@ -43,7 +44,9 @@ def test_independent_workers_and_versioned_app():
     def status(job):
         return client.get("/v1/jobs/" + job).json()
 
-    initial = batch([("a", "photo:a")])
+    initial = batch([("a", "photo:a"), ("default-only", "photo:d"), ("user-only", "photo:u")])
+    for event, tags in zip(initial["events"], [["trip", "candidate"], ["candidate"], ["trip"]]):
+        event["tags"] = tags
     first = post("/v1/events", initial, **{"Idempotency-Key": unique})
     assert post("/v1/events", initial, **{"Idempotency-Key": unique}) == first
     assert work_once(db, "ingest")
@@ -51,7 +54,10 @@ def test_independent_workers_and_versioned_app():
     assert client.get("/v1/jobs/" + first + "/input").json()["source"] == unique
     assert first in [row["id"] for row in client.get("/v1/jobs").json()]
     assert unique in [row["app"] for row in client.get("/v1/apps").json()]
-    assert client.get("/v1/events/count", params={"source": unique}).json() == {"count": 1}
+    assert client.get("/v1/events/count", params={"source": unique}).json() == {"count": 3}
+    preview = {"app": unique, "version": manifest["version"]}
+    assert client.get("/v1/events/count", params=preview).json() == {"count": 2}
+    assert client.get("/v1/events/count", params={**preview, "all_tags": "trip"}).json() == {"count": 1}
     conflict = post("/v1/events", batch([("0", "photo:0"), ("a", "changed")]))
     work_once(db, "ingest")
     assert status(conflict)["status"] == "failed"
@@ -67,6 +73,7 @@ def test_independent_workers_and_versioned_app():
                     "selection": [{"photo_id": "a", "order": 1, "role": "opener", "rationale": "catalog"}]}
 
     request = {"app": unique, "version": manifest["version"], "task": "Curate", "end": "2026-02-01T00:00:00Z"}
+    request["all_tags"] = ["trip"]
     analysis = post("/v1/runs", request)
     worker = Thread(target=work_once, args=(db, "analysis", Harness))
     worker.start()
@@ -81,6 +88,7 @@ def test_independent_workers_and_versioned_app():
         release.set()
         worker.join(10)
     result = status(analysis)["result"]
+    assert result["all_tags"] == ["candidate", "trip"]
     record = client.get(f"/v1/apps/{unique}/records/runs/{result['run_id']}").json()
     assert record["artifact_id"] == result["artifact"]["artifact_id"]
     empty = post("/v1/runs", dict(request, start="2026-01-02T00:00:00Z"))

@@ -17,7 +17,7 @@ from starlette.routing import Route
 
 from . import manifests
 from .runtime import Runner, snapshot
-from .service_store import Conflict, Database, RecordRepository, ingest, select_items
+from .service_store import Conflict, Database, RecordRepository, ingest, select_items, selection_filter
 
 
 def nonempty(value, name):
@@ -44,6 +44,8 @@ def clean_payload(kind, body):
         for event in events:
             if not isinstance(event, dict) or not isinstance(event.get("item"), dict):
                 raise ValueError("expected an event with a source item")
+            if "tags" in event:
+                event["tags"] = manifests.tag_list(event["tags"])
             item = event["item"]
             for field in ("id", "uri"):
                 nonempty(item.get(field), field)
@@ -54,7 +56,9 @@ def clean_payload(kind, body):
         return body
     for field in ("app", "version", "task"):
         nonempty(body.get(field), field)
-    if body.keys() - {"app", "version", "task", "start", "end"}:
+    if "all_tags" in body:
+        body["all_tags"] = manifests.tag_list(body["all_tags"])
+    if body.keys() - {"app", "version", "task", "start", "end", "all_tags"}:
         raise ValueError("unknown run parameter")
     for field in ("start", "end"):
         if field in body:
@@ -131,22 +135,31 @@ def create_api(db, token):
                                      for i, k, s, t, n in rows])
             if request.url.path == "/v1/apps":
                 rows = conn.execute("SELECT manifest FROM looomer_apps ORDER BY app,version").fetchall()
-                return JSONResponse([{k: m[k] for k in ("app", "version", "source", "max_items")}
+                return JSONResponse([dict({k: m[k] for k in ("app", "version", "source", "max_items")},
+                                          required_tags=m.get("required_tags", []))
                                      for (m,) in rows])
             if request.url.path == "/v1/events/count":
                 query = request.query_params
                 try:
-                    source = nonempty(query.get("source"), "source")
+                    required = []
+                    if "app" in query or "version" in query:
+                        manifest = db.manifest(conn, nonempty(query.get("app"), "app"),
+                                               nonempty(query.get("version"), "version"))
+                        source = manifest["source"]
+                        required = manifest.get("required_tags", [])
+                    else:
+                        source = nonempty(query.get("source"), "source")
+                    tags = manifests.tag_list(required + query.getlist("all_tags"))
                     start, end = [timestamp(query[k]) if query.get(k) else None for k in ("start", "end")]
                     if start and end and datetime.fromisoformat(start) >= datetime.fromisoformat(end):
                         raise ValueError("start must precede end")
+                except KeyError:
+                    return JSONResponse({"error": "unknown app version"}, 404)
                 except ValueError as error:
                     return JSONResponse({"error": str(error)}, 400)
-                count = conn.execute("""
-                    SELECT count(*) FROM looomer_history WHERE source=%s
-                    AND (%s::timestamptz IS NULL OR occurred_at >= %s)
-                    AND (%s::timestamptz IS NULL OR occurred_at < %s)
-                """, (source, start, start, end, end)).fetchone()[0]
+                bounds = {k: v for k, v in (("start", start), ("end", end)) if v}
+                where, args = selection_filter(source, bounds, tags)
+                count = conn.execute("SELECT count(*) FROM looomer_history WHERE " + where, args).fetchone()[0]
                 return JSONResponse({"count": count})
             row = conn.execute("SELECT payload FROM looomer_jobs WHERE id=%s",
                                (request.path_params["job_id"],)).fetchone()
@@ -167,13 +180,14 @@ def default_harness():
 
 def analyze(db, conn, job, payload, harness_factory):
     manifest = db.manifest(conn, payload["app"], payload["version"])
-    items = select_items(conn, manifest["source"], payload, manifest["max_items"])
+    tags = manifests.tag_list(manifest.get("required_tags", []) + payload.get("all_tags", []))
+    items = select_items(conn, manifest["source"], payload, manifest["max_items"], tags)
     source = snapshot(items)
     agents, skills, tools = manifests.registries(manifest, harness_factory(), job)
     repository = RecordRepository(conn, manifest["app"])
     run, artifact = Runner(agents, repository, skills, tools).run(
         manifest["workflow"], source, payload["task"], manifest["schema"])
-    return {"run_id": run["run_id"], "artifact": artifact}
+    return {"run_id": run["run_id"], "artifact": artifact, "all_tags": tags}
 
 
 def work_once(db, kind, harness_factory=default_harness):

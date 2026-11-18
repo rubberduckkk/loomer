@@ -10,7 +10,7 @@
 <form id="form"><label>Registered app<select id="apps" required></select></label>
 <label>Start time (UTC, inclusive)<input type="datetime-local" step="1" id="start"></label>
 <label>End time (UTC, exclusive)<input type="datetime-local" step="1" id="end"></label>
-<p id="matches"></p><label>Task<textarea required id="task"></textarea></label>
+<p id="defaults"></p><label>Additional required tags (one per line)<textarea id="tags"></textarea></label><p id="matches"></p><label>Task<textarea required id="task"></textarea></label>
 <button id="launch" disabled>Submit run</button></form></details></section>
 <section><h2>Recent jobs</h2><button id="refresh">Refresh activity</button>
 <div class="scroll"><table><thead><tr><th>Submitted (UTC)</th><th>Kind</th><th>Source or app</th><th>Status</th></tr></thead><tbody id="jobs"></tbody></table></div></section>
@@ -35,12 +35,17 @@ function windowFields() {
   for (const id of ['start','end']) if (el(id).value) bounds[id] = el(id).value + 'Z';
   return bounds;
 }
+function extraTags() {
+  return el('tags').value.split(/\r?\n/).map(t=>t.trim()).filter(Boolean);
+}
 async function previewCount() {
   const version = ++countVersion, app = registered[el('apps').value];
   el('launch').disabled = true;
   el('matches').textContent = '';
   if (!app) return;
-  const query = new URLSearchParams({source:app.source,...windowFields()});
+  el('defaults').textContent='App-required tags: '+(app.required_tags.join(', ') || 'none');
+  const query = new URLSearchParams({app:app.app,version:app.version,...windowFields()});
+  for(const tag of extraTags())query.append('all_tags',tag);
   const {count} = await api('events/count?' + query);
   if (version !== countVersion) return;
   el('matches').textContent = count + ' matching events from ' + app.source + ' · limit ' + app.max_items;
@@ -59,6 +64,7 @@ async function inspect(id) {
   if (job.error) blocks.unshift(block('Error',job.error,true));
   if (job.result) blocks.unshift(block('Output',job.result.artifact || job.result,true));
   if (job.result?.artifact) {
+    if(job.result.all_tags) blocks.push(block('Effective required tags',job.result.all_tags));
     const path='apps/'+encodeURIComponent(input.app)+'/records/';
     const [run,snapshot]=await Promise.all([api(path+'runs/'+encodeURIComponent(job.result.run_id)),
       api(path+'snapshots/'+encodeURIComponent(job.result.artifact.provenance.input_snapshot_id))]);
@@ -83,14 +89,14 @@ async function refresh() {
 }
 el('refresh').onclick=handle(refresh);
 el('form').oninput=()=>{requestKey=crypto.randomUUID();};
-for(const id of ['apps','start','end'])el(id).onchange=handle(previewCount);
+for(const id of ['apps','start','end','tags'])el(id).onchange=handle(previewCount);
 el('form').onsubmit=handle(async event=>{
   event.preventDefault();
   const app=registered[el('apps').value], key=requestKey;
   el('launch').disabled=true;
   try {
     const job=await api('runs',{method:'POST',headers:{'Content-Type':'application/json','Idempotency-Key':key},
-      body:JSON.stringify({app:app.app,version:app.version,task:el('task').value,...windowFields()})});
+      body:JSON.stringify({app:app.app,version:app.version,task:el('task').value,all_tags:extraTags(),...windowFields()})});
     requestKey=crypto.randomUUID(); selected=job.job_id; el('composer').open=false;
     await refresh(); el('detail').scrollIntoView();
   } finally {await previewCount();}
