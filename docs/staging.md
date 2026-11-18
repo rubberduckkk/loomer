@@ -19,14 +19,17 @@ umask 077
 cat > ~/staging.env <<ENV
 POSTGRES_PASSWORD=$(openssl rand -hex 32)
 LOOOMER_API_TOKEN=$(openssl rand -hex 32)
-LOOOMER_MODEL=YOUR_MODEL_ID
-OPENAI_API_KEY=YOUR_STAGING_KEY
+LOOOMER_ROUTER_URL=https://openrouter.ai/api/v1
+LOOOMER_ROUTER_API_KEY=YOUR_ROUTER_KEY
+LOOOMER_MODEL=YOUR_ROUTER_MODEL_ID
 ENV
 chmod 600 ~/staging.env
 nano ~/staging.env
 ```
 
-Enter an OpenAI model ID available to your account with tool calling and a staging provider key. Generate this file once. PostgreSQL uses its password on first initialization. The deploy account has Docker access and should be treated as a host administrator.
+Set the router key and copy the exact model ID from your router. OpenRouter is the default endpoint. Choose a model with streaming and tool calling for photo curation. You can switch to another gateway exposing the same Chat Completions contract by changing the URL, key, and model ID. Apply edits to the existing staging.env and rerun the approved deploy to recreate the analysis worker. [OpenRouter tool-capable models](https://openrouter.ai/models?supported_parameters=tools).
+
+Generate this file once. PostgreSQL uses its password on first initialization. The deploy account has Docker access and should be treated as a host administrator.
 
 ## 2. Connect GitHub to the VM
 

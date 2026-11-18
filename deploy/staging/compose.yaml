@@ -34,7 +34,9 @@ services:
       <<: *database
       LOOOMER_PROVIDER: openai
       LOOOMER_MODEL: ${LOOOMER_MODEL:?set model}
-      OPENAI_API_KEY: ${OPENAI_API_KEY:?set API key}
+      # The Strands adapter speaks the router's Chat Completions protocol.
+      OPENAI_BASE_URL: ${LOOOMER_ROUTER_URL:-https://openrouter.ai/api/v1}
+      OPENAI_API_KEY: ${LOOOMER_ROUTER_API_KEY:?set router API key}
     command: ["worker", "analysis"]
 volumes:
   pgdata:
