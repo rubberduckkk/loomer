@@ -33,6 +33,7 @@ services:
     environment:
       <<: *database
       LOOOMER_PROVIDER: openai
+      LOOOMER_MAX_OUTPUT_TOKENS: ${LOOOMER_MAX_OUTPUT_TOKENS:-4096}
       LOOOMER_MODEL: ${LOOOMER_MODEL:?set model}
       # The Strands adapter speaks the router's Chat Completions protocol.
       OPENAI_BASE_URL: ${LOOOMER_ROUTER_URL:-https://openrouter.ai/api/v1}

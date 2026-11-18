@@ -21,7 +21,13 @@ def model_from_env(env=None):
             args = {"api_key": required(env, "OPENAI_API_KEY")}
             if env.get("OPENAI_BASE_URL"):
                 args["base_url"] = env["OPENAI_BASE_URL"]
-            return OpenAIModel(model_id=model_id, client_args=args)
+            params = {}
+            if env.get("LOOOMER_MAX_OUTPUT_TOKENS"):
+                limit = int(env["LOOOMER_MAX_OUTPUT_TOKENS"])
+                if limit < 1:
+                    raise ValueError("LOOOMER_MAX_OUTPUT_TOKENS must be positive")
+                params["max_tokens"] = limit
+            return OpenAIModel(model_id=model_id, client_args=args, params=params)
         if provider == "anthropic":
             from strands.models.anthropic import AnthropicModel
             return AnthropicModel(model_id=model_id, max_tokens=4096,
