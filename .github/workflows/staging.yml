@@ -31,7 +31,7 @@ jobs:
     environment: staging
     concurrency: looomer-staging
     steps:
-      - name: Deploy approved commit
+      - name: Deploy tested commit
         env:
           HOST: ${{ vars.STAGING_HOST }}
           KEY: ${{ secrets.STAGING_SSH_KEY }}

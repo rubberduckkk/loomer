@@ -7,7 +7,7 @@ exec 9>"$HOME/.deploy.lock"
 flock 9
 git fetch origin main
 if [[ $sha != "$(git rev-parse origin/main)" ]]; then
-  echo "Approve the latest main commit to deploy staging." >&2
+  echo "Staging requires the latest main commit." >&2
   exit 1
 fi
 git checkout --detach "$sha"

@@ -1,6 +1,6 @@
 # Vultr staging
 
-This setup uses one Ubuntu 24.04 VM, PostgreSQL 16 on a Docker volume, and one container each for the API, ingestion worker, and analysis worker. The API listens on localhost. GitHub connects over SSH after the staging reviewer approves the tested commit. The photo picker accepts catalog metadata and returns a curation artifact.
+This setup uses one Ubuntu 24.04 VM, PostgreSQL 16 on a Docker volume, and one container each for the API, ingestion worker, and analysis worker. The API listens on localhost. GitHub connects over SSH automatically after tests pass on main. The photo picker accepts catalog metadata and returns a curation artifact.
 
 ## 1. Prepare the VM
 
@@ -27,7 +27,7 @@ chmod 600 ~/staging.env
 nano ~/staging.env
 ```
 
-Set the router key and copy the exact model ID from your router. OpenRouter is the default endpoint. Choose a model with streaming and tool calling for photo curation. You can switch to another gateway exposing the same Chat Completions contract by changing the URL, key, and model ID. Apply edits to the existing staging.env and rerun the approved deploy to recreate the analysis worker. [OpenRouter tool-capable models](https://openrouter.ai/models?supported_parameters=tools).
+Set the router key and copy the exact model ID from your router. OpenRouter is the default endpoint. Choose a model with streaming and tool calling for photo curation. You can switch to another gateway exposing the same Chat Completions contract by changing the URL, key, and model ID. Apply edits to the existing staging.env and rerun the staging workflow to recreate the analysis worker. [OpenRouter tool-capable models](https://openrouter.ai/models?supported_parameters=tools).
 
 Generate this file once. PostgreSQL uses its password on first initialization. The deploy account has Docker access and should be treated as a host administrator.
 
@@ -57,9 +57,9 @@ gh variable set STAGING_HOST --env staging --repo rubberduckkk/looomer --body "$
 printf '%s ssh-ed25519 %s\n' "$host" 'HOST_PUBLIC_KEY_BODY' | gh secret set STAGING_KNOWN_HOSTS --env staging --repo rubberduckkk/looomer
 ```
 
-## 3. Approve a release
+## 3. Deploy a release
 
-Open GitHub Actions → Staging. Select the latest main run or use Run workflow on main. The test job uses a disposable PostgreSQL database. When it passes, open Review deployments, select staging, then Approve and deploy. Future pushes follow the same path. Only approve the latest main commit. A failed deployment shows its failing command in Actions.
+Open GitHub Actions → Staging. Select the latest main run or use Run workflow on main. The test job uses a disposable PostgreSQL database. When tests pass, the deploy job starts automatically. Each push to main follows this path. A failed deployment shows its failing command in Actions.
 
 ## 4. Exercise the photo slice
 
@@ -88,7 +88,7 @@ Look for completed status and the selected photo ID in result.artifact.payload. 
 
 ## Recovery
 
-For an application rollback revert the faulty commit on main and approve the resulting run. Deploys reuse the PostgreSQL volume. Take a database backup before schema changes and plan database recovery separately. Register changed manifest definitions with a new version.
+For an application rollback revert the faulty commit on main and let the resulting workflow deploy it. Deploys reuse the PostgreSQL volume. Take a database backup before schema changes and plan database recovery separately. Register changed manifest definitions with a new version.
 
 ## Core admin
 
