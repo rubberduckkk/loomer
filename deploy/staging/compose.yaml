@@ -1,0 +1,40 @@
+name: looomer-staging
+x-app: &app
+  image: looomer-staging:${RELEASE:?set RELEASE}
+  restart: unless-stopped
+  environment: &database
+    LOOOMER_DATABASE_URL: postgresql://looomer:${POSTGRES_PASSWORD:?set password}@db/looomer
+services:
+  db:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: looomer
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "looomer"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+  api:
+    <<: *app
+    environment:
+      <<: *database
+      LOOOMER_API_TOKEN: ${LOOOMER_API_TOKEN:?set token}
+    command: ["serve", "--host", "0.0.0.0"]
+    ports: ["127.0.0.1:8080:8080"]
+  ingest:
+    <<: *app
+    command: ["worker", "ingest"]
+  analysis:
+    <<: *app
+    environment:
+      <<: *database
+      LOOOMER_PROVIDER: openai
+      LOOOMER_MODEL: ${LOOOMER_MODEL:?set model}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:?set API key}
+    command: ["worker", "analysis"]
+volumes:
+  pgdata:
